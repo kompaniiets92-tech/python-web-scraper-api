@@ -1,0 +1,6 @@
+﻿fastapi
+uvicorn
+playwright
+SQLAlchemy>=2.0
+psycopg[binary]
+python-dotenv
