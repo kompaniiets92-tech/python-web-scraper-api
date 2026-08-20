@@ -1,80 +1,133 @@
-# Python Web Scraper & Data API — FastAPI, Playwright, PostgreSQL
+# Python Web Scraper & Data API
 
-A small, production-style web scraping application that scrapes Hacker News and exposes the collected items through a REST API.
+A ready-to-use Python web scraping and REST API starter project built with **FastAPI**, **Playwright**, **PostgreSQL**, **SQLAlchemy**, and **Pydantic v2**.
 
-- The scraper uses Playwright (synchronous API) to fetch Hacker News front page stories and validates each item with Pydantic v2.
-- Validated items are persisted to PostgreSQL via SQLAlchemy and exposed from a simple FastAPI application.
+The project scrapes stories from Hacker News, validates the collected data, stores it in PostgreSQL, and exposes the stored data through a REST API.
 
-This README documents the current implementation, API endpoints, local setup, and example requests.
+## Features
 
----
+- Automated web scraping with Playwright (synchronous API)
+- Data validation with Pydantic v2
+- PostgreSQL persistence via SQLAlchemy ORM
+- Duplicate URL protection (app-level check + DB-level `UNIQUE` constraint + `IntegrityError` handling)
+- Paginated `GET /api/items` endpoint
+- Health check endpoint
+- Interactive Swagger/OpenAPI docs
+- Separated scraping, validation, and persistence layers
+- Environment-based database configuration
+
+## What You Get
+
+With this purchase, you get access to the project source code and the complete starter codebase, including:
+
+- FastAPI REST API
+- Playwright web scraper
+- Pydantic data validation
+- PostgreSQL database integration
+- SQLAlchemy models and database session management
+- Duplicate URL protection
+- API pagination
+- Health check endpoint
+- Database setup scripts
+- Automated tests
+- `.env.example` configuration template
+- Swagger/OpenAPI documentation
+- Setup and usage instructions
+
+The project is structured so you can use the existing implementation as a starting point and adapt the scraper, data models, database layer, or API endpoints to your own use case.
+
+## Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| Python 3.11+ | Application language |
+| FastAPI | REST API framework |
+| Playwright (sync API) | Web scraping |
+| PostgreSQL 14+ | Data storage |
+| SQLAlchemy | ORM / database access |
+| Pydantic v2 | Data validation |
+| Uvicorn | ASGI server |
+| Pytest | Testing |
+
+> Exact pinned versions are listed in `requirements.txt`.
+
+## Requirements
+
+Before starting, make sure you have installed:
+
+- Python 3.11 or later
+- PostgreSQL 14 or later, running and reachable
+- Git
+
+Playwright's Chromium browser is installed separately (see below).
 
 ## Architecture
 
-- Scraper layer
-  - app/scraper/scraper.py
-  - Uses Playwright (synchronous) to fetch https://news.ycombinator.com/ and extract story title and URL.
-  - Returns a list of validated Pydantic `ScrapedItem` objects and does NOT perform persistence.
+```
+Hacker News
+     │
+     ▼
+Playwright Scraper  (app/scraper/scraper.py)
+     │
+     ▼
+Pydantic Validation  (app/models/item.py)
+     │
+     ▼
+Duplicate Check + Persistence  (app/api/items.py, app/models/database.py)
+     │
+     ▼
+PostgreSQL
+     │
+     ▼
+FastAPI REST API  (app/main.py)
+```
 
-- Validation layer
-  - app/models/item.py
-  - Pydantic v2 model `ScrapedItem` enforces a non-empty title and a valid HTTP/HTTPS URL.
+The scraper only collects and validates data — it never touches the database directly. Persistence is handled entirely by the API layer, keeping concerns separated.
 
-- Persistence layer
-  - app/models/database.py (SQLAlchemy ORM model `ScrapedItemDB`)
-  - app/db/session.py provides the SQLAlchemy engine and `get_session()` context manager.
-  - Database-level duplicate protection: a UNIQUE constraint named `uq_scraped_items_url` is defined on `scraped_items.url`.
+### Scraper layer — `app/scraper/scraper.py`
+Uses Playwright (synchronous) to fetch `https://news.ycombinator.com/` and extract story title and URL. Returns a list of validated `ScrapedItem` objects. Does **not** perform persistence.
 
-- API layer
-  - app/api/items.py exposes two endpoints:
-    - GET /api/items — paginated read of persisted items
-    - POST /api/scrape — run the scraper, validate results, insert only new URLs
-  - app/main.py registers the router and provides GET /health.
+### Validation layer — `app/models/item.py`
+Pydantic v2 model `ScrapedItem` enforces a non-empty title and a valid HTTP/HTTPS URL.
 
-Duplicate protection strategy
-- The POST /api/scrape endpoint first queries the database for existing URLs (single SELECT with WHERE url IN (...)) and inserts only the non-existing ones.
-- The database UNIQUE(url) constraint (`uq_scraped_items_url`) is the final safety net against races/duplicates. The API handles IntegrityError to respond sensibly if a race occurs.
+### Persistence layer — `app/models/database.py`, `app/db/session.py`
+- `ScrapedItemDB` — SQLAlchemy ORM model
+- `get_session()` — context manager providing a DB session
+- `scraped_items.url` has a `UNIQUE` constraint named `uq_scraped_items_url`
 
----
+### API layer — `app/api/items.py`, `app/main.py`
+- `GET /api/items` — paginated read of persisted items
+- `POST /api/scrape` — run the scraper, validate results, insert only new URLs
+- `GET /health` — health check
 
-## Tech stack
+## Duplicate Protection
 
-- Python 3.x
-- FastAPI
-- Playwright (synchronous API)
-- PostgreSQL
-- SQLAlchemy (ORM)
-- Pydantic v2
+1. **Application-level check** — before inserting, the API queries PostgreSQL once for existing URLs (`WHERE url IN (...)`) and inserts only URLs not already present.
+2. **Database-level constraint** — `UNIQUE(url)` (`uq_scraped_items_url`) is the final safety net.
+3. **Race handling** — insertion is wrapped to catch `sqlalchemy.exc.IntegrityError`. On conflict, the transaction is rolled back, counts are recomputed, and the correct result is returned.
 
----
+## API Endpoints
 
-## API Endpoints (current implementation)
+### `GET /health`
 
-### GET /health
-- Method: GET
-- Path: `/health`
-- Purpose: Simple health check
-- Example response (200):
+Simple health check.
 
-{
-  "status": "ok"
-}
+```json
+{ "status": "ok" }
+```
 
----
+### `GET /api/items`
 
-### GET /api/items
-- Method: GET
-- Path: `/api/items`
-- Query parameters:
-  - `limit` (int): default 20, minimum 1, maximum 100
-  - `offset` (int): default 0, minimum 0
-- Behavior:
-  - Returns persisted `ScrapedItemResponse` objects ordered by `id` descending (newest first).
-  - Pagination is implemented via `offset` and `limit` and applied in the SQL query using `offset()` and `limit()`.
-- Response model: list of objects with fields `id`, `title`, `url`, `scraped_at` (ISO datetime).
+Returns stored items, newest first.
 
-Example response (200):
+| Parameter | Type | Default | Limits |
+|---|---|---|---|
+| `limit` | int | 20 | 1–100 |
+| `offset` | int | 0 | ≥ 0 |
 
+Example: `GET /api/items?limit=5&offset=0`
+
+```json
 [
   {
     "id": 42,
@@ -83,28 +136,19 @@ Example response (200):
     "scraped_at": "2026-08-18T12:34:56.789Z"
   }
 ]
+```
 
----
+### `POST /api/scrape`
 
-### POST /api/scrape
-- Method: POST
-- Path: `/api/scrape`
-- Query parameters:
-  - `limit` (int): default 10, minimum 1, maximum 50
-- Behavior:
-  - Calls the scraper function `scrape_news_hackernews(limit)` (synchronous Playwright scraper).
-  - Validates scraped items with the Pydantic `ScrapedItem` model.
-  - Checks which scraped URLs already exist (single SELECT WHERE url IN (...)).
-  - Inserts only the new URLs in a single transaction; commits once after adding all new items.
-  - If a race causes a duplicate at insert time, the code catches `IntegrityError`, rolls back, recomputes counts, and returns the appropriate result.
-- Response model: `ScrapeResult` with fields:
-  - `scraped` (int) — number of valid items returned by the scraper
-  - `saved` (int) — number of new rows actually inserted
-  - `skipped` (int) — number of scraped URLs already present (scraped - saved)
-  - `items` (list) — list of newly inserted items (each has `id`, `title`, `url`, `scraped_at`)
+Runs the scraper and saves new items.
 
-Example response (201/200):
+| Parameter | Type | Default | Limits |
+|---|---|---|---|
+| `limit` | int | 10 | 1–50 |
 
+Example: `POST /api/scrape?limit=5`
+
+```json
 {
   "scraped": 5,
   "saved": 3,
@@ -118,193 +162,227 @@ Example response (201/200):
     }
   ]
 }
+```
 
-Note: if the scraper returns zero items the endpoint returns `scraped=0, saved=0, skipped=0, items=[]`.
+Field meanings:
+- `scraped` — number of valid items returned by the scraper
+- `saved` — number of new rows actually inserted
+- `skipped` — number of scraped URLs already present (`scraped - saved`)
+- `items` — newly inserted items
 
----
+If the scraper returns zero items: `{"scraped": 0, "saved": 0, "skipped": 0, "items": []}`.
 
-## Duplicate protection (how it works now)
+## Project Structure
 
-1. Application-level check: POST /api/scrape collects all scraped URLs and queries the database once to find existing URLs. Only items whose URL is not in that result set are inserted.
+```
+python-web-scraper-api/
+│
+├── app/
+│   ├── api/
+│   │   └── items.py            # GET /api/items, POST /api/scrape
+│   ├── db/
+│   │   └── session.py          # DATABASE_URL-driven engine, get_session()
+│   ├── models/
+│   │   ├── database.py         # SQLAlchemy model, UNIQUE(url)
+│   │   ├── item.py             # Pydantic ScrapedItem
+│   │   ├── item_response.py    # Response model for persisted items
+│   │   └── scrape_response.py  # Response model for POST /api/scrape
+│   ├── scraper/
+│   │   └── scraper.py          # Playwright-based synchronous scraper
+│   └── main.py                 # FastAPI app, /health
+│
+├── scripts/                    # DB helper scripts (see below)
+├── tests/
+├── .env.example
+├── requirements.txt
+└── README.md
+```
 
-2. Database-level safety: `scraped_items.url` has a UNIQUE constraint (`uq_scraped_items_url`) defined in `app/models/database.py`. This is the final protection against duplicates in concurrent scenarios.
+## Installation
 
-3. Race handling: the insertion loop is wrapped to catch `sqlalchemy.exc.IntegrityError`. If an IntegrityError occurs (another worker inserted the same URL concurrently), the transaction is rolled back, the endpoint recomputes saved/skipped counts and returns the newly present rows. This behavior is implemented in the current POST /api/scrape handler.
+### 1. Clone the repository
 
----
+```bash
+git clone https://github.com/kompaniiets92-tech/python-web-scraper-api.git
+cd python-web-scraper-api
+```
 
-## Local setup (Windows / PowerShell)
+### 2. Create and activate a virtual environment
 
-1. Clone the repository
+**Windows PowerShell**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
-   git clone <repo-url>
-   cd python-web-scraper-api
+**Windows CMD**
+```cmd
+python -m venv .venv
+.\.venv\Scripts\activate.bat
+```
 
-2. Create and activate a virtual environment (PowerShell)
+**macOS / Linux**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
+### 3. Install dependencies
 
-   (If using CMD.exe)
-   .\.venv\Scripts\activate.bat
+```bash
+pip install -r requirements.txt
+```
 
-3. Install Python dependencies
+### 4. Install Playwright's Chromium browser
 
-   pip install -r requirements.txt
+```bash
+python -m playwright install chromium
+```
 
-4. Install Playwright browsers (Chromium is required by the scraper)
+## Database Configuration
 
-   python -m playwright install chromium
+The application reads the connection string from the `DATABASE_URL` environment variable.
 
-5. Configure the database connection
+`.env.example`:
+```
+DATABASE_URL=postgresql://username:password@localhost:5432/dbname
+```
 
-   The application reads `DATABASE_URL` from the environment. You may create a `.env` file at the project root for local development. An example file is provided in `.env.example`.
+Copy it to `.env` and fill in real values:
 
-   Example (do NOT commit real credentials):
-   - Create a `.env` file based on `.env.example` and set:
-     DATABASE_URL=postgresql://username:password@host:5432/dbname
+```bash
+cp .env.example .env   # macOS/Linux
+copy .env.example .env # Windows CMD
+```
 
-   Alternatively set the environment variable in PowerShell:
+Or set it directly (PowerShell):
 
-   $env:DATABASE_URL = "postgresql://username:password@host:5432/dbname"
+```powershell
+$env:DATABASE_URL = "postgresql://username:password@localhost:5432/dbname"
+```
 
-   Note: `app/db/session.py` will raise a RuntimeError if `DATABASE_URL` is not set.
+> If `DATABASE_URL` is not set, `app/db/session.py` raises a `RuntimeError` at import time.
 
----
+**Never commit real credentials to the repository.**
 
-## Running the API (development)
+## Database Setup
 
-Start the FastAPI app with Uvicorn (reload mode useful during development):
+The `scripts/` directory contains two helper scripts. Run them in this order after configuring `DATABASE_URL`:
 
-PowerShell:
+```bash
+python scripts/create_tables.py
+python scripts/verify_database.py
+```
 
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+**`create_tables.py`**
+Imports `Base` from `app.models.database` and `engine` from `app.db.session`, then runs `Base.metadata.create_all(bind=engine)`. This creates the `scraped_items` table (and its `uq_scraped_items_url` unique constraint, defined on the model) if it doesn't already exist. It reads `DATABASE_URL` from the environment — no connection string is hardcoded.
 
-Or (if python on PATH):
+**`verify_database.py`**
+Connects to the database and reports:
+- whether the `scraped_items` table exists
+- any duplicate URLs currently stored
+- whether the `uq_scraped_items_url` unique constraint is present
+- the total row count in `scraped_items`
 
+Useful as a quick sanity check after setup or after running the scraper.
+
+## Running the API
+
+```bash
 python -m uvicorn app.main:app --reload
+```
 
-The API will be available at http://127.0.0.1:8000 by default.
+The API will be available at `http://127.0.0.1:8000`.
 
----
+## Interactive API Documentation
 
-## Example requests (PowerShell)
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
 
-GET /health
+## Example Requests (PowerShell)
 
-$response = Invoke-RestMethod -Method GET -Uri http://127.0.0.1:8000/health
-$response | ConvertTo-Json -Depth 5
+**Health check**
+```powershell
+Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/health" | ConvertTo-Json -Depth 5
+```
 
-Example response:
+**Get stored items**
+```powershell
+Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/api/items?limit=5" | ConvertTo-Json -Depth 5
+```
 
-{
-  "status": "ok"
-}
+**Trigger scraping**
+```powershell
+Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:8000/api/scrape?limit=5" | ConvertTo-Json -Depth 5
+```
 
+## Testing
 
-GET /api/items?limit=5
+```bash
+pytest
+```
 
-$response = Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/api/items?limit=5"
-$response | ConvertTo-Json -Depth 5
+## Demo
 
-Example response:
+### Swagger API
 
-[
-  {
-    "id": 42,
-    "title": "Example Hacker News story",
-    "url": "https://example.com/article",
-    "scraped_at": "2026-08-18T12:34:56.789Z"
-  }
-]
+The project includes interactive Swagger/OpenAPI documentation at:
 
+```
+/docs
+```
 
-GET /api/items?limit=5&offset=0
+### Example workflow
 
-$response = Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8000/api/items?limit=5&offset=0"
-$response | ConvertTo-Json -Depth 5
+1. Configure PostgreSQL
+2. Run the database setup script
+3. Start the FastAPI application
+4. Open `/docs`
+5. Run `POST /api/scrape`
+6. Retrieve collected data with `GET /api/items`
 
-(Same response shape as above)
+## Scope
 
+This product is a focused starter codebase, not a hosted scraping service or a universal scraping platform.
 
-POST /api/scrape?limit=5
+It does not currently include:
 
-$response = Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:8000/api/scrape?limit=5"
-$response | ConvertTo-Json -Depth 5
+- hosted infrastructure
+- Docker configuration
+- CI/CD pipelines
+- deployment configuration
+- authentication or authorization
+- a web frontend
+- scheduled scraping
+- support for multiple scraping targets out of the box
 
-Example response (one possible outcome):
+The included architecture is designed to provide a clean foundation for adding these capabilities.
 
-{
-  "scraped": 5,
-  "saved": 2,
-  "skipped": 3,
-  "items": [
-    {
-      "id": 101,
-      "title": "A newly scraped story",
-      "url": "https://example.com/new-article",
-      "scraped_at": "2026-08-19T00:10:00.123Z"
-    },
-    {
-      "id": 102,
-      "title": "Another new story",
-      "url": "https://example.com/another",
-      "scraped_at": "2026-08-19T00:10:01.456Z"
-    }
-  ]
-}
+Additional current limitations:
 
-Note: actual numbers depend on current database contents.
+- The scraper targets Hacker News only.
+- Playwright uses the synchronous API.
+- Chromium must be installed separately.
+- PostgreSQL is required — no SQLite fallback.
 
----
+## Customization Potential
 
-## API documentation
+The layered architecture (scraper → validation → persistence → API) makes it straightforward to extend with:
 
-FastAPI provides interactive API docs when the application is running:
+- additional scraping targets or data fields
+- scheduled/background scraping jobs
+- authentication
+- Docker-based development and deployment
+- additional database models and endpoints
 
-- OpenAPI UI (Swagger): http://127.0.0.1:8000/docs
-- ReDoc: http://127.0.0.1:8000/redoc
+## License
 
-These endpoints are available by default when running the app locally with Uvicorn.
+This project is distributed under a commercial license.
 
----
+The purchaser receives a license to use and modify the source code according to the terms of the included license agreement.
 
-## Project structure (important files)
+Redistribution, resale, or publication of the source code as a standalone product is not permitted unless explicitly authorized by the copyright holder.
 
-- app/
-  - main.py            # FastAPI app and /health
-  - api/
-    - items.py         # GET /api/items, POST /api/scrape
-  - scraper/
-    - scraper.py       # Playwright-based synchronous scraper (returns Pydantic objects)
-  - models/
-    - item.py          # Pydantic ScrapedItem
-    - item_response.py # Pydantic response model for persisted items
-    - scrape_response.py # Pydantic model for POST /api/scrape responses
-    - database.py      # SQLAlchemy model (ScrapedItemDB) with UNIQUE(url)
-  - db/
-    - session.py       # DATABASE_URL-driven SQLAlchemy engine and get_session()
+## Support
 
-- scripts/              # helper scripts (create tables, add constraints, verify DB)
-- requirements.txt
-- .env.example
-- README.md
-
----
-
-## Notes and limitations
-
-- The scraper is synchronous and uses Playwright; ensure browsers are installed (`python -m playwright install chromium`).
-- The scraper function is intentionally pure: it only scrapes and validates items. Database persistence is performed by the API layer.
-- The project does not include Dockerfiles, CI/CD, or deployment configuration in this repository.
-- The database connection must be provided via the `DATABASE_URL` environment variable or a `.env` file at project root. `app/db/session.py` raises a `RuntimeError` at import time if `DATABASE_URL` is missing.
-
----
-
-## Changes made to README.md
-
-- Replaced the placeholder README with a comprehensive, accurate description of the current implementation, including architecture, endpoints, setup, and examples.
-
----
-
-If anything in the README appears inconsistent with your local setup after pulling the repository, please run the application locally and report the output; I can update the README accordingly.
+For questions about setup, customization, or extending the project, contact the seller through the platform where this product was purchased.
