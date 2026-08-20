@@ -1,0 +1,51 @@
+Commercial License
+
+Copyright (c) 2026 [Your Name / Business Name]
+
+1. Grant of License
+
+Subject to payment of the applicable purchase price, the copyright
+holder grants the purchaser ("Licensee") a non-exclusive,
+non-transferable license to use, modify, and integrate this source
+code ("Software") into the Licensee's own projects, including
+commercial and client projects.
+
+2. Permitted Use
+
+- Use the Software in unlimited personal or client projects.
+- Modify the Software to fit the Licensee's needs.
+- Deploy applications built with the Software.
+
+3. Restrictions
+
+- The Licensee may NOT resell, sublicense, or redistribute the
+  Software itself (in original or modified form) as a standalone
+  product, template, or starter kit.
+- The Licensee may NOT publish the Software's source code publicly
+  (e.g. as an open-source repository) without prior written
+  permission from the copyright holder.
+- Each purchase covers one (1) Licensee. Additional developers or
+  entities must obtain a separate license.
+
+4. No Warranty
+
+The Software is provided "AS IS", without warranty of any kind,
+express or implied, including but not limited to warranties of
+merchantability, fitness for a particular purpose, and
+non-infringement. In no event shall the copyright holder be liable
+for any claim, damages, or other liability arising from the use of
+the Software.
+
+5. Termination
+
+This license is automatically terminated if the Licensee breaches
+any of the restrictions above. Upon termination, the Licensee must
+cease all use and distribution of the Software.
+
+6. Support
+
+Support terms, if any, are defined separately by the seller on the
+platform where the Software was purchased (e.g. Contra).
+
+For questions regarding licensing terms, contact the copyright holder
+through the platform where this Software was purchased.
