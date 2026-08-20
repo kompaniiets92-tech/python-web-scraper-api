@@ -29,7 +29,7 @@ With this purchase, you get access to the project source code and the complete s
 - API pagination
 - Health check endpoint
 - Database setup scripts
-- Automated tests
+- Automated test suite (pytest) covering the API, validation, and duplicate-protection logic
 - `.env.example` configuration template
 - Swagger/OpenAPI documentation
 - Setup and usage instructions
@@ -318,9 +318,27 @@ Invoke-RestMethod -Method POST -Uri "http://127.0.0.1:8000/api/scrape?limit=5" |
 
 ## Testing
 
+Install test dependencies (in addition to `requirements.txt`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the suite:
+
 ```bash
 pytest
 ```
+
+Tests run against a temporary local SQLite database and a mocked scraper — no PostgreSQL connection, Playwright browser, or network access is required. Coverage includes:
+
+- health check endpoint
+- `ScrapedItem` validation (valid input, empty title, invalid/non-HTTP URLs)
+- `POST /api/scrape` — saving new items, response counts
+- **duplicate-URL protection** — re-scraping identical items saves 0 new rows and correctly reports them as skipped
+- partial-duplicate scraping (mix of new and already-seen URLs)
+- `GET /api/items` pagination (`limit`/`offset`)
+- query-parameter validation (`422` on out-of-range `limit`)
 
 ## Demo
 
@@ -332,6 +350,8 @@ The project includes interactive Swagger/OpenAPI documentation at:
 /docs
 ```
 
+![Swagger UI](screenshots/swagger-ui.png)
+
 ### Example workflow
 
 1. Configure PostgreSQL
@@ -340,6 +360,16 @@ The project includes interactive Swagger/OpenAPI documentation at:
 4. Open `/docs`
 5. Run `POST /api/scrape`
 6. Retrieve collected data with `GET /api/items`
+
+**Example `POST /api/scrape` response:**
+
+![Scrape response](screenshots/scrape-response.png)
+
+### Duplicate protection in action
+
+Running the scrape endpoint twice in a row shows the duplicate protection working: the first call saves new items, the second call — against the same source data — saves 0 and correctly reports all items as skipped.
+
+![Duplicate protection](screenshots/duplicate-protection.png)
 
 ## Scope
 
